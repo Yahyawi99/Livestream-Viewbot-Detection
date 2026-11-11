@@ -117,7 +117,7 @@ class TwitchHelixClient:
         streams = []
         cursor = None
 
-        while True:
+        for _ in range(10):
             result = self.get_streams(
                 first=100,
                 after=cursor,
@@ -130,6 +130,7 @@ class TwitchHelixClient:
 
             if not cursor:
                 break
+
 
         return streams
 

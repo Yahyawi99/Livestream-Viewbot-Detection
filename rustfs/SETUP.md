@@ -1,8 +1,8 @@
 # RustFS Setup (Podman)
 
-Local, single-node [RustFS](https://rustfs.com) object storage running in a rootless Podman container. RustFS is an S3-compatible, high-performance object store (Apache 2.0 license), used here as an alternative to MinIO for the `livestream-viewbot-detection` project.
+Local, single-node [RustFS](https://rustfs.com) object storage running in a rootless Podman container with a Podman named volume for persistent data. RustFS is an S3-compatible, high-performance object store (Apache 2.0 license), used here as an alternative to MinIO for the `livestream-viewbot-detection` project.
 
-This guide follows the official [RustFS Podman documentation](https://docs.rustfs.com/en/installation/container/podman), with a few additions for rootless Podman.
+This guide follows the official [RustFS Podman documentation](https://docs.rustfs.com/en/installation/container/podman).
 
 ## Overview
 
@@ -14,20 +14,15 @@ This guide follows the official [RustFS Podman documentation](https://docs.rustf
 | S3 API | `http://127.0.0.1:9000` |
 | Web console | `http://127.0.0.1:9001` |
 | Health endpoint | `http://127.0.0.1:9000/health` |
-| Data directory | `~/rustfs/data` |
+| Data storage | Podman named volume `rustfs-data` (mounted at `/data`) |
 | Config file | `~/rustfs/config/rustfs.env` |
 | Container user | `rustfs` (UID/GID `10001`, non-root) |
 
 Ports are bound to `127.0.0.1` only, so RustFS is **not** reachable from other machines. Without the `127.0.0.1:` prefix, Podman publishes the ports on all network interfaces.
 
-## Directory layout
+## Why a named volume
 
-```
-~/rustfs/
-├── config/
-│   └── rustfs.env     # credentials and settings (chmod 600)
-└── data/              # persistent object storage (mounted at /data)
-```
+A named volume is managed by Podman and needs no ownership or SELinux fixes. The container runs as non-root UID `10001`, and with a host bind mount in rootless Podman you must set ownership with `podman unshare chown`; a named volume avoids that entirely. The volume also survives container removal and replacement.
 
 ## 1. Pull the image
 
@@ -35,38 +30,14 @@ Ports are bound to `127.0.0.1` only, so RustFS is **not** reachable from other m
 podman pull docker.io/rustfs/rustfs:latest
 ```
 
-## 2. Create directories
+## 2. Create the volume and config directory
 
 ```bash
-mkdir -p ~/rustfs/data
+podman volume create rustfs-data
 mkdir -p ~/rustfs/config
 ```
 
-## 3. Set data directory ownership (rootless Podman)
-
-The container runs as UID `10001`. The official docs say to `chown -R 10001:10001` the host directory, which is correct for rootful Docker. **With rootless Podman, a plain `sudo chown 10001:10001` is wrong**: container UID 10001 is mapped to a different host UID (from your `subuid` range), so the directory would appear to belong to nobody inside the container and writes fail with `permission denied`.
-
-Use `podman unshare`, which runs `chown` inside your user namespace:
-
-```bash
-# if you previously ran: sudo chown -R 10001:10001 ~/rustfs/data
-# first hand the directory back to your own user:
-sudo chown -R "$USER": ~/rustfs/data
-
-# then set ownership as the container sees it:
-podman unshare chown -R 10001:10001 ~/rustfs/data
-```
-
-Check it (on the host the numeric owner will be a high subuid number, not 10001; that is expected):
-
-```bash
-ls -ldn ~/rustfs/data
-podman unshare ls -ldn ~/rustfs/data     # should show 10001 10001
-```
-
-**Alternative:** use a named volume, which needs no permission fixes. Run `podman volume create rustfs-data`, and in step 5 replace `-v ~/rustfs/data:/data:Z` with `-v rustfs-data:/data`.
-
-## 4. Create the config file
+## 3. Create the config file
 
 Generate a random access key and secret key. The docs say not to use the well-known `rustfsadmin` value for either one.
 
@@ -101,7 +72,7 @@ unset RUSTFS_ACCESS RUSTFS_PASSWORD
 > - Avoid running `cat` on this file in shared terminals, screenshots or chats. If the keys were exposed, rotate them (see [Rotating credentials](#rotating-credentials)).
 > - Never commit `rustfs.env` to git.
 
-## 5. Run the container
+## 4. Run the container
 
 ```bash
 podman run -d \
@@ -109,7 +80,7 @@ podman run -d \
   --restart unless-stopped \
   -p 127.0.0.1:9000:9000 \
   -p 127.0.0.1:9001:9001 \
-  -v ~/rustfs/data:/data:Z \
+  -v rustfs-data:/data \
   --env-file ~/rustfs/config/rustfs.env \
   docker.io/rustfs/rustfs:latest \
   /data
@@ -120,11 +91,13 @@ podman run -d \
 | `--restart unless-stopped` | Restart the container if it exits (see the note on reboots below) |
 | `-p 127.0.0.1:9000:9000` | S3 API, localhost only |
 | `-p 127.0.0.1:9001:9001` | Web console, localhost only |
-| `-v ~/rustfs/data:/data:Z` | Persist data on the host; `:Z` relabels the directory for SELinux |
+| `-v rustfs-data:/data` | Mount the named volume for persistent data |
 | `--env-file ...` | Loads credentials and settings without putting them on the command line |
 | `/data` | Directory RustFS serves |
 
-> **Terminal tip:** if your shell shows `-- MULTILINE --` and does not run the pasted command, press `Ctrl+J` to run it (or `Ctrl+C` to cancel and start over). Typing it as a single line avoids the issue.
+On success, Podman prints the new container ID.
+
+> **Terminal tip:** if your shell shows `-- MULTILINE --` and does not run a pasted command, press `Ctrl+J` to run it (or `Ctrl+C` to cancel).
 
 ### Restart policy and reboots
 
@@ -135,7 +108,7 @@ systemctl --user enable --now podman-restart.service
 loginctl enable-linger "$USER"    # keep user services running without a login session
 ```
 
-## 6. Verify the deployment
+## 5. Verify the deployment
 
 ```bash
 podman ps --filter name=rustfs
@@ -143,7 +116,18 @@ curl --fail http://127.0.0.1:9000/health
 podman logs rustfs
 ```
 
-Open the console at <http://127.0.0.1:9001> and log in with the access key and secret key from `~/rustfs/config/rustfs.env`.
+Open the console at <http://127.0.0.1:9001>. You should see the RustFS login page:
+
+![RustFS console login page](./rustfs-login.png)
+
+On the **Key Login** tab, enter the values from `~/rustfs/config/rustfs.env`:
+
+| Login field | Value |
+|-------------|-------|
+| **Account** | `RUSTFS_ACCESS_KEY` |
+| **Key** | `RUSTFS_SECRET_KEY` |
+
+If the login page loads, the container is running and the console is reachable. (The **STS Login** tab is for temporary credentials and isn't needed for this setup.)
 
 ## Daily operations
 
@@ -152,7 +136,29 @@ podman stop rustfs       # stop
 podman start rustfs      # start again (data and config persist)
 podman restart rustfs
 podman logs -f rustfs    # follow logs
-podman rm -f rustfs      # remove container (data in ~/rustfs/data is kept)
+podman rm -f rustfs      # remove container (the rustfs-data volume is kept)
+```
+
+## Managing the volume
+
+```bash
+podman volume ls                       # list volumes
+podman volume inspect rustfs-data      # shows the Mountpoint on the host
+```
+
+> **Warning:** `podman volume rm rustfs-data` permanently deletes all stored objects. `podman system prune --volumes` can also remove volumes that no container is using, so don't run it while the container is stopped and removed unless you have a backup.
+
+### Backup and restore
+
+```bash
+# backup (stop the container first for a consistent copy)
+podman stop rustfs
+podman volume export rustfs-data --output ~/rustfs-data-backup.tar
+podman start rustfs
+
+# restore into a new, empty volume
+podman volume create rustfs-data-restored
+podman volume import rustfs-data-restored ~/rustfs-data-backup.tar
 ```
 
 ## Using RustFS from code
@@ -186,12 +192,12 @@ Load credentials from environment variables rather than hard-coding them.
 
 ## Rotating credentials
 
-1. Generate new values and rewrite `~/rustfs/config/rustfs.env` (step 4).
-2. Recreate the container so it reads the new file:
+1. Generate new values and rewrite `~/rustfs/config/rustfs.env` (step 3).
+2. Recreate the container so it reads the new file. The volume and your data stay intact:
 
    ```bash
    podman rm -f rustfs
-   # re-run the podman run command from step 5
+   # re-run the podman run command from step 4
    ```
 
 3. Update every application or CLI alias that uses the old keys.
@@ -200,11 +206,11 @@ Load credentials from environment variables rather than hard-coding them.
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
-| `permission denied` on `/data`, container exits | Ownership was set with plain `chown`. Use `podman unshare chown -R 10001:10001 ~/rustfs/data` (step 3) |
-| Errors about writing to `/var/log/rustfs` | The log directory is not writable by UID 10001. Set `RUSTFS_OBS_LOG_DIRECTORY` to a writable path, or mount a host log directory (prepared with `podman unshare chown -R 10001:10001`) at `/var/log/rustfs` |
+| Errors about writing to `/var/log/rustfs` | The log directory is not writable by UID 10001. Set `RUSTFS_OBS_LOG_DIRECTORY` to a writable path, or mount a second named volume (e.g. `-v rustfs-logs:/var/log/rustfs`) |
 | Shell shows `-- MULTILINE --` and nothing runs | Press `Ctrl+J` to execute the command |
 | `podman run` printed nothing | Run `podman ps -a` and `podman logs rustfs` |
 | `name "rustfs" is already in use` | `podman rm -f rustfs`, then run again |
+| `rustfs-data` volume missing | Run `podman volume create rustfs-data`; if it was deleted, restore from a backup |
 | Port already in use | Another service (e.g. an old MinIO container) is on 9000/9001: `podman rm -f minio`, or change the host port, e.g. `-p 127.0.0.1:9100:9000` |
 | Cannot log in to the console | Check `rustfs.env` has no stray spaces or quotes; recreate the container after editing it |
 | Container not running after reboot | Enable `podman-restart.service` (see above) |
@@ -222,6 +228,6 @@ Copy objects between the two endpoints with an S3 client (e.g. `mc mirror` or `r
 ## Recommendations
 
 - **Pin the image version** (e.g. `docker.io/rustfs/rustfs:<version>`) instead of `latest`, so upgrades are deliberate.
-- **Back up** `~/rustfs/data` regularly.
+- **Back up** the `rustfs-data` volume regularly (see above).
 - Create dedicated access keys/users for applications instead of using the root credentials.
 - Add `rustfs/` or `*.env` to `.gitignore` if this folder lives inside a repository.

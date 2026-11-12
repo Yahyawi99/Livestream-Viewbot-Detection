@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 
 from src.clients.twitch_helix import TwitchHelixClient
-from src.storage.jsonl_storage import JsonlStreamStorage
+from src.ingestion.direct_ingestion import DirectIngestion
 
 
 logger = logging.getLogger(__name__)
@@ -13,10 +13,10 @@ logger = logging.getLogger(__name__)
 
 class StreamCollector:
 
-    def __init__(self, interval_seconds=60):
+    def __init__(self, interval_seconds=60,ingestion=None):
 
         self.client = TwitchHelixClient()
-        self.storage = JsonlStreamStorage()
+        self.ingestion = ingestion or DirectIngestion()
 
         self.interval_seconds = interval_seconds
 
@@ -44,18 +44,16 @@ class StreamCollector:
                 "raw_data": stream
             })
 
-        # Use the UTC date to partition the output file.
-        collection_date = collected_at.strftime("%Y-%m-%d")
 
-        file_path = self.storage.save(
+        object_key = self.ingestion.ingest(
             records,
-            collection_date
+            collected_at.isoformat()
         )
 
         logger.info(
             "Collected %d streams. Saved to %s",
             len(records),
-            file_path
+            object_key
         )
 
     def start(self):

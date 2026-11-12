@@ -20,4 +20,16 @@ key = "streams/test/streams_test.jsonl"
 
 uploaded_key = storage.upload_jsonl(records, key)
 
+print("============================")
 print(f"Uploaded successfully: {uploaded_key}")
+print("============================")
+
+
+response = storage.s3.get_object(
+    Bucket=storage.bucket,
+    Key=key
+)
+print("============================")
+print("retrieved successfully")
+print(response["Body"].read().decode("utf-8"))
+print("============================")

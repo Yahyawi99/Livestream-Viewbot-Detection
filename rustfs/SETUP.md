@@ -6,17 +6,17 @@ This guide follows the official [RustFS Podman documentation](https://docs.rustf
 
 ## Overview
 
-| Item | Value |
-|------|-------|
-| Runtime | Podman 5.8.9 (rootless) |
-| Image | `docker.io/rustfs/rustfs:latest` |
-| Container name | `rustfs` |
-| S3 API | `http://127.0.0.1:9000` |
-| Web console | `http://127.0.0.1:9001` |
-| Health endpoint | `http://127.0.0.1:9000/health` |
-| Data storage | Podman named volume `rustfs-data` (mounted at `/data`) |
-| Config file | `~/rustfs/config/rustfs.env` |
-| Container user | `rustfs` (UID/GID `10001`, non-root) |
+| Item            | Value                                                  |
+| --------------- | ------------------------------------------------------ |
+| Runtime         | Podman 5.8.9 (rootless)                                |
+| Image           | `docker.io/rustfs/rustfs:latest`                       |
+| Container name  | `rustfs`                                               |
+| S3 API          | `http://127.0.0.1:9000`                                |
+| Web console     | `http://127.0.0.1:9001`                                |
+| Health endpoint | `http://127.0.0.1:9000/health`                         |
+| Data storage    | Podman named volume `rustfs-data` (mounted at `/data`) |
+| Config file     | `~/rustfs/config/rustfs.env`                           |
+| Container user  | `rustfs` (UID/GID `10001`, non-root)                   |
 
 Ports are bound to `127.0.0.1` only, so RustFS is **not** reachable from other machines. Without the `127.0.0.1:` prefix, Podman publishes the ports on all network interfaces.
 
@@ -59,16 +59,17 @@ chmod 600 ~/rustfs/config/rustfs.env
 unset RUSTFS_ACCESS RUSTFS_PASSWORD
 ```
 
-| Variable | Meaning |
-|----------|---------|
-| `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY` | Root credentials (S3 keys and console login) |
-| `RUSTFS_ADDRESS` | S3 API listen address inside the container |
-| `RUSTFS_CONSOLE_ADDRESS` | Console listen address inside the container |
-| `RUSTFS_CONSOLE_ENABLE` | Enables the web console |
-| `RUSTFS_OBS_LOGGER_LEVEL` | Log verbosity (`error` is quieter; the official example uses `error`) |
-| `RUSTFS_OBS_LOG_DIRECTORY` | Where RustFS writes log files inside the container |
+| Variable                                  | Meaning                                                               |
+| ----------------------------------------- | --------------------------------------------------------------------- |
+| `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY` | Root credentials (S3 keys and console login)                          |
+| `RUSTFS_ADDRESS`                          | S3 API listen address inside the container                            |
+| `RUSTFS_CONSOLE_ADDRESS`                  | Console listen address inside the container                           |
+| `RUSTFS_CONSOLE_ENABLE`                   | Enables the web console                                               |
+| `RUSTFS_OBS_LOGGER_LEVEL`                 | Log verbosity (`error` is quieter; the official example uses `error`) |
+| `RUSTFS_OBS_LOG_DIRECTORY`                | Where RustFS writes log files inside the container                    |
 
 > **Security notes**
+>
 > - Avoid running `cat` on this file in shared terminals, screenshots or chats. If the keys were exposed, rotate them (see [Rotating credentials](#rotating-credentials)).
 > - Never commit `rustfs.env` to git.
 
@@ -86,14 +87,14 @@ podman run -d \
   /data
 ```
 
-| Option | Purpose |
-|--------|---------|
-| `--restart unless-stopped` | Restart the container if it exits (see the note on reboots below) |
-| `-p 127.0.0.1:9000:9000` | S3 API, localhost only |
-| `-p 127.0.0.1:9001:9001` | Web console, localhost only |
-| `-v rustfs-data:/data` | Mount the named volume for persistent data |
-| `--env-file ...` | Loads credentials and settings without putting them on the command line |
-| `/data` | Directory RustFS serves |
+| Option                     | Purpose                                                                 |
+| -------------------------- | ----------------------------------------------------------------------- |
+| `--restart unless-stopped` | Restart the container if it exits (see the note on reboots below)       |
+| `-p 127.0.0.1:9000:9000`   | S3 API, localhost only                                                  |
+| `-p 127.0.0.1:9001:9001`   | Web console, localhost only                                             |
+| `-v rustfs-data:/data`     | Mount the named volume for persistent data                              |
+| `--env-file ...`           | Loads credentials and settings without putting them on the command line |
+| `/data`                    | Directory RustFS serves                                                 |
 
 On success, Podman prints the new container ID.
 
@@ -118,14 +119,14 @@ podman logs rustfs
 
 Open the console at <http://127.0.0.1:9001>. You should see the RustFS login page:
 
-![RustFS console login page](./rustfs-login.png)
+![RustFS console login page](images/rustfs-login.png)
 
 On the **Key Login** tab, enter the values from `~/rustfs/config/rustfs.env`:
 
-| Login field | Value |
-|-------------|-------|
+| Login field | Value               |
+| ----------- | ------------------- |
 | **Account** | `RUSTFS_ACCESS_KEY` |
-| **Key** | `RUSTFS_SECRET_KEY` |
+| **Key**     | `RUSTFS_SECRET_KEY` |
 
 If the login page loads, the container is running and the console is reachable. (The **STS Login** tab is for temporary credentials and isn't needed for this setup.)
 
@@ -160,6 +161,68 @@ podman start rustfs
 podman volume create rustfs-data-restored
 podman volume import rustfs-data-restored ~/rustfs-data-backup.tar
 ```
+
+## Bucket: `twitch-raw-data`
+
+Raw, unprocessed Twitch data collected for `livestream-viewbot-detection`. Files are stored as JSON Lines (`.jsonl`, one JSON record per line) and partitioned by date using Hive-style `year=/month=/day=` prefixes.
+
+### Layout
+
+```
+twitch-raw-data/
+│
+├── streams/
+│   └── year=2026/
+│       └── month=11/
+│           └── day=12/
+│               ├── collection_001.jsonl
+│               └── collection_002.jsonl
+│
+├── viewer-snapshots/
+│   └── year=2026/
+│       └── month=11/
+│           └── day=12/
+│               └── snapshots_001.jsonl
+│
+└── chat-events/
+    └── year=2026/
+        └── month=11/
+            └── day=12/
+                └── chat_001.jsonl
+```
+
+### Prefixes
+
+| Prefix              | Contents                              | File naming            |
+| ------------------- | ------------------------------------- | ---------------------- |
+| `streams/`          | Stream metadata collected from Twitch | `collection_NNN.jsonl` |
+| `viewer-snapshots/` | Periodic viewer-count snapshots       | `snapshots_NNN.jsonl`  |
+| `chat-events/`      | Chat events                           | `chat_NNN.jsonl`       |
+
+Object key pattern:
+
+```
+<dataset>/year=YYYY/month=MM/day=DD/<file-prefix>_NNN.jsonl
+```
+
+### Conventions
+
+- **Raw and immutable:** write new files instead of modifying existing ones, and do transformations in a separate (processed) bucket or prefix.
+- **Zero-padded numbering:** `NNN` increments per file within a day (`001`, `002`, ...), and `MM`/`DD` are zero-padded so keys sort correctly.
+- **One timezone:** pick one for the date partitions and use it everywhere (UTC is the usual choice).
+- **Folders are prefixes:** S3-compatible storage has no real directories. The "folders" above exist only as key prefixes, and appear once the first object is uploaded under them.
+- **Hive-style partitions** let tools such as DuckDB, Spark, Athena or pandas/pyarrow filter by `year`, `month` and `day` automatically.
+
+### Create the bucket and upload a file
+
+```bash
+aws --endpoint-url http://127.0.0.1:9000 s3 mb s3://twitch-raw-data
+
+aws --endpoint-url http://127.0.0.1:9000 s3 cp collection_001.jsonl \
+  s3://twitch-raw-data/streams/year=2026/month=11/day=12/collection_001.jsonl
+```
+
+Set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` to your RustFS access key and secret key first, or use the equivalent boto3 calls below.
 
 ## Using RustFS from code
 
@@ -204,16 +267,16 @@ Load credentials from environment variables rather than hard-coding them.
 
 ## Troubleshooting
 
-| Symptom | Likely cause / fix |
-|---------|--------------------|
-| Errors about writing to `/var/log/rustfs` | The log directory is not writable by UID 10001. Set `RUSTFS_OBS_LOG_DIRECTORY` to a writable path, or mount a second named volume (e.g. `-v rustfs-logs:/var/log/rustfs`) |
-| Shell shows `-- MULTILINE --` and nothing runs | Press `Ctrl+J` to execute the command |
-| `podman run` printed nothing | Run `podman ps -a` and `podman logs rustfs` |
-| `name "rustfs" is already in use` | `podman rm -f rustfs`, then run again |
-| `rustfs-data` volume missing | Run `podman volume create rustfs-data`; if it was deleted, restore from a backup |
-| Port already in use | Another service (e.g. an old MinIO container) is on 9000/9001: `podman rm -f minio`, or change the host port, e.g. `-p 127.0.0.1:9100:9000` |
-| Cannot log in to the console | Check `rustfs.env` has no stray spaces or quotes; recreate the container after editing it |
-| Container not running after reboot | Enable `podman-restart.service` (see above) |
+| Symptom                                        | Likely cause / fix                                                                                                                                                        |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Errors about writing to `/var/log/rustfs`      | The log directory is not writable by UID 10001. Set `RUSTFS_OBS_LOG_DIRECTORY` to a writable path, or mount a second named volume (e.g. `-v rustfs-logs:/var/log/rustfs`) |
+| Shell shows `-- MULTILINE --` and nothing runs | Press `Ctrl+J` to execute the command                                                                                                                                     |
+| `podman run` printed nothing                   | Run `podman ps -a` and `podman logs rustfs`                                                                                                                               |
+| `name "rustfs" is already in use`              | `podman rm -f rustfs`, then run again                                                                                                                                     |
+| `rustfs-data` volume missing                   | Run `podman volume create rustfs-data`; if it was deleted, restore from a backup                                                                                          |
+| Port already in use                            | Another service (e.g. an old MinIO container) is on 9000/9001: `podman rm -f minio`, or change the host port, e.g. `-p 127.0.0.1:9100:9000`                               |
+| Cannot log in to the console                   | Check `rustfs.env` has no stray spaces or quotes; recreate the container after editing it                                                                                 |
+| Container not running after reboot             | Enable `podman-restart.service` (see above)                                                                                                                               |
 
 ## Migrating from MinIO
 

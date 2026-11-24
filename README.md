@@ -76,7 +76,7 @@ streams/
 - A completed hour is only removed from the local machine after it has been safely uploaded. If an upload fails, it is kept and retried.
 - If the collector is stopped normally, the partial hour is saved before it exits.
 
-During development, storage runs on your own computer using a local S3-compatible service (RustFS). For long-term storage, the same approach points to Backblaze B2.
+During development, storage runs on your own computer using a local S3-compatible service (RustFS). For long-term storage, the same approach points to Backblaze B2. Because I don't have access to free cloud services, I ran the collection script on Termux (Android) and uploaded the hourly archives to B2 from there.
 
 ---
 
@@ -106,6 +106,8 @@ You will need Python 3.10+, a free Twitch developer account, and (for local stor
 
 Leave it running and it will keep gathering data every minute. Press `Ctrl+C` to stop it cleanly.
 
+I ran this on Termux (Android) to upload data to B2, since I don't have access to free cloud services; the same `python -m scripts.collect_streams` command works there once dependencies are installed.
+
 ---
 
 ## Where this is headed
@@ -127,15 +129,3 @@ The collection and storage foundation is the base for a larger pipeline:
 - **Contaminated training data.** Twitch data is assumed to be mostly genuine, but some suspicious streams may be mixed in.
 - **Platform differences.** Twitch and Kick audiences differ, which affects how well one can inform the other.
 - **Public data only.** We use what the platform exposes publicly, so we can't see things like individual viewer accounts or chat membership.
-
----
-
-## Ethics and responsible use
-
-This project looks at aggregate, publicly available statistics about streams. It is meant for research into platform integrity. Please don't use its output to harass or publicly accuse individual streamers. An unusual score is a reason to look closer, not a conclusion.
-
----
-
-## Author
-
-Built by [Yahyawi99](https://github.com/Yahyawi99).

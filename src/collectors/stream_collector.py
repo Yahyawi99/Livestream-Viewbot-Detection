@@ -37,7 +37,6 @@ class StreamCollector:
         records = []
 
         for stream in streams:
-
             records.append({
                 "collected_at": collected_at.isoformat(),
                 "platform": "twitch",
@@ -45,16 +44,18 @@ class StreamCollector:
             })
 
 
-        object_key = self.ingestion.ingest(
+        compressed_files = self.ingestion.ingest(
             records,
             collected_at.isoformat()
         )
 
         logger.info(
-            "Collected %d streams. Saved to %s",
-            len(records),
-            object_key
+            "Collected %d streams and appended them to the hourly batch.",
+            len(records)
         )
+
+        for file_path in compressed_files:
+            logger.info("Completed hourly archive: %s", file_path)
 
     def start(self):
         """

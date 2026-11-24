@@ -28,9 +28,6 @@ class HourlyBatcher:
         return self.base_dir / timestamp.strftime("%Y-%m-%d")
 
     def append(self, records: list[dict], collection_timestamp: str):
-        if not records:
-            return []
-
         collected_at = self._parse_timestamp(collection_timestamp)
 
         hour_dir = self._get_hour_directory(collected_at)

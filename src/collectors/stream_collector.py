@@ -59,19 +59,30 @@ class StreamCollector:
             logger.info("Uploaded to Backblaze B2: %s", object_key)
 
 
+    
     def start(self):
-        """
-        Run collection continuously.
-        """
-
         logger.info(
             "Starting collector. Interval: %d seconds",
             self.interval_seconds
         )
 
         try:
-            while True:
+            # Recover pending data before starting new collections.
+            logger.info("Checking for pending Bronze archives...")
 
+            try:
+                recovered_objects = self.ingestion.recover()
+
+                for object_key in recovered_objects:
+                    logger.info(
+                        "Recovered and uploaded to Backblaze B2: %s",
+                        object_key
+                    )
+
+            except Exception:
+                logger.exception("Startup recovery failed.")
+
+            while True:
                 cycle_start = time.monotonic()
 
                 try:
@@ -80,7 +91,6 @@ class StreamCollector:
                 except Exception:
                     logger.exception("Collection cycle failed")
 
-                # Avoid starting cycles faster than the configured interval.
                 elapsed = time.monotonic() - cycle_start
 
                 sleep_time = max(
@@ -95,3 +105,8 @@ class StreamCollector:
 
         finally:
             self.client.close()
+
+            logger.info(
+                "Collector stopped. Any unfinished hourly JSONL batch "
+                "has been retained locally."
+            )

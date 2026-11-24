@@ -30,19 +30,20 @@ class HourlyBatcher:
     def append(self, records: list[dict], collection_timestamp: str):
         collected_at = self._parse_timestamp(collection_timestamp)
 
-        hour_dir = self._get_hour_directory(collected_at)
-        hour_dir.mkdir(parents=True, exist_ok=True)
+        if records:
+            hour_dir = self._get_hour_directory(collected_at)
+            hour_dir.mkdir(parents=True, exist_ok=True)
 
-        hour_file = hour_dir / f"{collected_at:%H}.jsonl"
+            hour_file = hour_dir / f"{collected_at:%H}.jsonl"
 
-        with hour_file.open("a", encoding="utf-8") as file:
-            for record in records:
-                file.write(
-                    json.dumps(record, ensure_ascii=False) + "\n"
-                )
+            with hour_file.open("a", encoding="utf-8") as file:
+                for record in records:
+                    file.write(
+                        json.dumps(record, ensure_ascii=False) + "\n"
+                    )
 
-            file.flush()
-            os.fsync(file.fileno())
+                file.flush()
+                os.fsync(file.fileno())
 
         return self.compress_completed_batches(collected_at)
 

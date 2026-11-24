@@ -44,7 +44,8 @@ class StreamCollector:
             })
 
 
-        compressed_files = self.ingestion.ingest(
+        
+        uploaded_objects = self.ingestion.ingest(
             records,
             collected_at.isoformat()
         )
@@ -54,8 +55,9 @@ class StreamCollector:
             len(records)
         )
 
-        for file_path in compressed_files:
-            logger.info("Completed hourly archive: %s", file_path)
+        for object_key in uploaded_objects:
+            logger.info("Uploaded to Backblaze B2: %s", object_key)
+
 
     def start(self):
         """

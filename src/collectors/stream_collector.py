@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from src.clients.twitch_helix import TwitchHelixClient
 from src.ingestion.direct_ingestion import DirectIngestion
+from src.producers.kafka_stream_producer import KafkaStreamProducer
 
 
 logger = logging.getLogger(__name__)
@@ -13,25 +14,23 @@ logger = logging.getLogger(__name__)
 
 class StreamCollector:
 
-    def __init__(self, interval_seconds=60,ingestion=None):
-
+    def __init__(self, interval_seconds=60, ingestion=None):
         self.client = TwitchHelixClient()
         self.ingestion = ingestion or DirectIngestion()
+        self.kafka_producer = KafkaStreamProducer()
 
         self.interval_seconds = interval_seconds
 
     def collect_once(self):
         """
         Retrieve all currently live streams
-        and store their raw API responses.
+        and publish/store their raw API responses.
         """
 
-        # One timestamp for this collection cycle.
         collected_at = datetime.now(timezone.utc)
 
         logger.info("Starting Twitch collection cycle")
 
-        # Retrieve all pages of live streams.
         streams = self.client.get_all_streams()
 
         records = []
@@ -43,23 +42,52 @@ class StreamCollector:
                 "raw_data": stream
             })
 
+        errors = []
 
-        
-        uploaded_objects = self.ingestion.ingest(
-            records,
-            collected_at.isoformat()
-        )
+        # Destination 1: Kafka
+        try:
+            published = self.kafka_producer.publish(records)
 
-        logger.info(
-            "Collected %d streams and appended them to the hourly batch.",
-            len(records)
-        )
+            logger.info(
+                "Published %d stream records to Kafka.",
+                published
+            )
 
-        for object_key in uploaded_objects:
-            logger.info("Uploaded to Backblaze B2: %s", object_key)
+        except Exception as exc:
+            logger.exception("Kafka publishing failed.")
+            errors.append(("Kafka", exc))
 
+        # Destination 2: Existing Bronze ingestion
+        try:
+            uploaded_objects = self.ingestion.ingest(
+                records,
+                collected_at.isoformat()
+            )
 
-    
+            logger.info(
+                "Collected %d streams and appended them to the hourly batch.",
+                len(records)
+            )
+
+            for object_key in uploaded_objects:
+                logger.info(
+                    "Uploaded to Backblaze B2: %s",
+                    object_key
+                )
+
+        except Exception as exc:
+            logger.exception("Bronze ingestion failed.")
+            errors.append(("Bronze", exc))
+
+        if errors:
+            failed_destinations = ", ".join(
+                destination for destination, _ in errors
+            )
+
+            raise RuntimeError(
+                f"Collection cycle had failures: {failed_destinations}"
+            )
+
     def start(self):
         logger.info(
             "Starting collector. Interval: %d seconds",
@@ -67,7 +95,7 @@ class StreamCollector:
         )
 
         try:
-            # Recover pending data before starting new collections.
+            # Recover pending Bronze archives before new collections.
             logger.info("Checking for pending Bronze archives...")
 
             try:
@@ -104,6 +132,7 @@ class StreamCollector:
             logger.info("Collector stopped by user")
 
         finally:
+            self.kafka_producer.close()
             self.client.close()
 
             logger.info(

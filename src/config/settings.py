@@ -5,11 +5,20 @@ load_dotenv()
 
 
 class Settings:
+    # Twitch
     TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
     TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
 
     TOKEN_URL = "https://id.twitch.tv/oauth2/token"
     API_BASE_URL = "https://api.twitch.tv/helix"
+
+    # Kafka
+    KAFKA_BOOTSTRAP_SERVERS = os.getenv(
+    "KAFKA_BOOTSTRAP_SERVERS",
+    "127.0.0.1:9092"
+    )
+
+    KAFKA_STREAMS_TOPIC = "twitch.streams.raw"
 
     @classmethod
     def validate(cls):
